@@ -1,24 +1,23 @@
 import Vector from './Vector';
 
-
 class Player {
-    constructor(playerNewMsg, isFromLoginPacket) {
-        this.id = playerNewMsg.id;
-        this.status = playerNewMsg.status;
-        this.level = null == playerNewMsg.level || 0 == playerNewMsg.level ? null : playerNewMsg.level;
-        this.reel = 1 == playerNewMsg.reel;
-        this.name = playerNewMsg.name;
-        this.type = playerNewMsg.type;
-        this.team = playerNewMsg.team;
-        this.pos = new Vector(playerNewMsg.posX, playerNewMsg.posY);
-        this.lowResPos = new Vector(playerNewMsg.posX, playerNewMsg.posY);
+    constructor(msg, fromLogin) {
+        this.id = msg.id;
+        this.status = msg.status;
+        this.level = null == msg.level || 0 == msg.level ? null : msg.level;
+        this.reel = 1 == msg.reel;
+        this.name = msg.name;
+        this.type = msg.type;
+        this.team = msg.team;
+        this.pos = new Vector(msg.posX, msg.posY);
+        this.lowResPos = new Vector(msg.posX, msg.posY);
         this.speed = Vector.zero();
         this.speedupgrade = 0;
-        this.rot = playerNewMsg.rot;
-        this.flag = playerNewMsg.flag;
+        this.rot = msg.rot;
+        this.flag = msg.flag;
         this.speedLength = 0;
         this.sprites = {};
-        this.randomness = Tools.rand(0, 1e5);
+        this.randomness = Tools.rand(0, 100000);
         this.keystate = {};
         this.lastTick = 0;
         this.health = 1;
@@ -63,14 +62,14 @@ class Player {
           powerupFadeState : 0,
           lastBounceSound : 0
         };
-        this.bot = playerNewMsg.isBot;
+        this.bot = msg.isBot;
         if (this.bot) {
             this.name = Tools.stripBotsNamePrefix(this.name);
         }
         this.name = Tools.mungeNonAscii(this.name, this.id);
         this.setupGraphics();
         if (0 == this.status) {
-          Tools.decodeUpgrades(this, playerNewMsg.upgrades);
+          Tools.decodeUpgrades(this, msg.upgrades);
           this.updatePowerups();
         } else {
           this.hidden = true;
@@ -84,13 +83,13 @@ class Player {
         } else {
           this.visibilityUpdate();
         }
-        if (!isFromLoginPacket && this.render || this.me()) {
+        if (!fromLogin && this.render || this.me()) {
           this.scale = 0;
           this.state.scaleLevel = 0;
         }
         if (this.me()) {
-          game.myType = playerNewMsg.type;
-          UI.aircraftSelected(playerNewMsg.type);
+          game.myType = msg.type;
+          UI.aircraftSelected(msg.type);
         }
       }
 
@@ -358,11 +357,11 @@ class Player {
         }
     }
 
-    kill(ev) {
+    kill(msg) {
         this.status = 1;
         this.keystate = {};
-        this.pos.x = ev.posX;
-        this.pos.y = ev.posY;
+        this.pos.x = msg.posX;
+        this.pos.y = msg.posY;
         this.speed = Vector.zero();
         if (this.me()) { 
             UI.resetPowerups();
@@ -374,7 +373,7 @@ class Player {
             this.unstealth();
         }
 
-        if (!this.culled && !ev.spectate) {
+        if (!this.culled && !msg.spectate) {
             switch (this.type) {
                 case PlaneType.Predator:
                     Particles.explosion(this.pos.clone(), Tools.rand(1.5, 2), Tools.randInt(2, 3));
@@ -484,33 +483,33 @@ class Player {
         this.state.bubbleTextWidth = n
     }
 
-    networkKey(msgTypeId, updateMsg) {
+    networkKey(type, msg) {
         this.lastPacket = game.timeNetwork;
         if (1 == this.status) {
             this.revive();
         }
-        if (null != updateMsg.posX) {
+        if (null != msg.posX) {
             this.reducedFactor = Tools.reducedFactor();
-            this.pos.x = updateMsg.posX;
-            this.pos.y = updateMsg.posY;
-            this.rot = updateMsg.rot;
-            this.speed.x = updateMsg.speedX;
-            this.speed.y = updateMsg.speedY;
+            this.pos.x = msg.posX;
+            this.pos.y = msg.posY;
+            this.rot = msg.rot;
+            this.speed.x = msg.speedX;
+            this.speed.y = msg.speedY;
         }
         var n = this.stealthed;
-        if (null != updateMsg.keystate) {
-            Tools.decodeKeystate(this, updateMsg.keystate);
+        if (null != msg.keystate) {
+            Tools.decodeKeystate(this, msg.keystate);
         }
-        if (null != updateMsg.upgrades) {
-            Tools.decodeUpgrades(this, updateMsg.upgrades);
+        if (null != msg.upgrades) {
+            Tools.decodeUpgrades(this, msg.upgrades);
             this.updatePowerups();
         }
-        if (null != updateMsg.energy) {
-            this.energy = updateMsg.energy;
-            this.energyRegen = updateMsg.energyRegen;
+        if (null != msg.energy) {
+            this.energy = msg.energy;
+            this.energyRegen = msg.energyRegen;
         }
-        if (null != updateMsg.boost) {
-            this.boost = updateMsg.boost;
+        if (null != msg.boost) {
+            this.boost = msg.boost;
         }
         if (this.team != game.myTeam && (this.stealthed || n && !this.stealthed)) {
             this.unstealth();
@@ -518,7 +517,7 @@ class Player {
         if (!(this.me() || !n || this.stealthed)) {
             this.unstealth();
         }
-        if (updateMsg.c == Network.SERVERPACKET.EVENT_BOUNCE && game.time - this.state.lastBounceSound > 300) {
+        if (msg.c == Network.SERVERPACKET.EVENT_BOUNCE && game.time - this.state.lastBounceSound > 300) {
             this.state.lastBounceSound = game.time;
             Sound.playerImpact(this.pos, this.type, this.speed.length() / config.ships[this.type].maxSpeed);
         }

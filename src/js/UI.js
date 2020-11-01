@@ -330,34 +330,35 @@ UI.changeMinimapTeam = function(playerId, team) {
     }
 };
 
-UI.scoreboardUpdate = function (msgData, msgRankings, maxScoreboard) {
-    var player;
-    var livePlayerIdSet = {};
-    var somethingLikeHighestPlayerId = 0;
+UI.scoreboardUpdate = function (scores, minimap, maxScoreboard) {
+    let player;
+    let livePlayerIdSet = {};
+    let somethingLikeHighestPlayerId = 0;
 
-    for (var i = 0; i < msgRankings.length; i++) {
-        if (null != (player = Players.get(msgRankings[i].id))) {
-            var miniMapPos = Tools.decodeMinimapCoords(msgRankings[i].x, msgRankings[i].y);
-            player.lowResPos.x = miniMapPos.x;
-            player.lowResPos.y = miniMapPos.y;
-            if (msgRankings[i].id != game.myID) {
-                if (!(0 == msgRankings[i].x && 0 == msgRankings[i].y)) {
+    for (let i = 0; i < minimap.length; i++) {
+        let player = Players.get(minimap[i].id);
+        if (player) {
+            let lowResPos = Tools.decodeMinimapCoords(minimap[i].x, minimap[i].y);
+            player.lowResPos.x = lowResPos.x;
+            player.lowResPos.y = lowResPos.y;
+            if (minimap[i].id != game.myID) {
+                if (!(minimap[i].x == 0 && minimap[i].y == 0)) {
                     livePlayerIdSet[player.id] = true;
-                    if (null == minimapMobs[msgRankings[i].id]) {
-                        var mobTextureName = "minimapMob";
-                        if (GameType.CTF == game.gameType && 1 == player.team) {
+                    if (minimapMobs[minimap[i].id] == null) {
+                        let mobTextureName = "minimapMob";
+                        if (game.gameType == GameType.CTF && player.team == 1) {
                             mobTextureName = "minimapBlue";
                         }
-                        minimapMobs[msgRankings[i].id] = {
+                        minimapMobs[minimap[i].id] = {
                             sprite: Textures.init(mobTextureName),
-                            x: miniMapPos.x,
-                            y: miniMapPos.y
+                            x: lowResPos.x,
+                            y: lowResPos.y
                         };
                     } else {
-                        minimapMobs[msgRankings[i].id].x = miniMapPos.x;
-                        minimapMobs[msgRankings[i].id].y = miniMapPos.y;
+                        minimapMobs[minimap[i].id].x = lowResPos.x;
+                        minimapMobs[minimap[i].id].y = lowResPos.y;
                     }
-                    updateMinimapMob(minimapMobs[msgRankings[i].id]);
+                    updateMinimapMob(minimapMobs[minimap[i].id]);
                 }
             } else {
                 somethingLikeHighestPlayerId = i + 1;
@@ -365,8 +366,8 @@ UI.scoreboardUpdate = function (msgData, msgRankings, maxScoreboard) {
         }
     }
 
-    for (var id in minimapMobs) {
-        if (null == livePlayerIdSet[id]) {
+    for (let id in minimapMobs) {
+        if (livePlayerIdSet[id] == null) {
             game.graphics.layers.ui1.removeChild(minimapMobs[id].sprite);
             minimapMobs[id].sprite.destroy();
             delete minimapMobs[id];
@@ -378,9 +379,9 @@ UI.scoreboardUpdate = function (msgData, msgRankings, maxScoreboard) {
     }
 
     if (maxScoreboard) {
-        maxScoreboard = Tools.clamp(maxScoreboard, 1, msgData.length);
+        maxScoreboard = Tools.clamp(maxScoreboard, 1, scores.length);
     } else {
-        maxScoreboard = msgData.length;
+        maxScoreboard = scores.length;
     }
 
     var playerRank = 0;
@@ -388,7 +389,8 @@ UI.scoreboardUpdate = function (msgData, msgRankings, maxScoreboard) {
     var html = "";
 
     for (var i = 0; i < maxScoreboard && !isEndOfScoreboard; i++) {
-        if (!(player = Players.get(msgData[i].id))) {
+        let player = Players.get(scores[i].id);
+        if (!player) {
             continue;
         }
 
@@ -405,8 +407,8 @@ UI.scoreboardUpdate = function (msgData, msgRankings, maxScoreboard) {
         }
 
         var isCurPlayerClass = player.me() ? " sel" : "";
-        var curPlayerScore = msgData[i].score;
-        var curPlayerLevel = player.bot ? "bot" : msgData[i].level;
+        var curPlayerScore = scores[i].score;
+        var curPlayerLevel = player.bot ? "bot" : scores[i].level;
 
         if (somethingLikeHighestPlayerId > maxScoreboard && playerRank == maxScoreboard - 1) {
             html += '<div class="line dottedline">&middot; &middot; &middot;</div>';

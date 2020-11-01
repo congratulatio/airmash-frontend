@@ -1,29 +1,55 @@
 import Player from './Player';
 import Vector from './Vector';
 
-var playersById = {},
-    t = [-1, -1, -1],
-    n = ["badge_gold", "badge_silver", "badge_bronze"];
+/** @type {Object<number, Player>} */
+let playersById = {};
 
+let lastTopPlayerIds = [-1, -1, -1];
+
+const badgeTextures = ["badge_gold", "badge_silver", "badge_bronze"];
+
+/**
+ * Update all players for current frame
+ */
 Players.update = function() {
-    var t, n;
-    for (t in playersById)
-        0 == (n = playersById[t]).status && (n.update(game.timeFactor),
-        n.updateGraphics(game.timeFactor));
-    if (null != game.spectatingID) {
-        if (null == (n = playersById[game.spectatingID]))
+    /** @type {Player} */
+    let player;
+
+    // Update all players
+    for (player of playersById) {
+        if (player.status == 0) {
+            player.update(game.timeFactor);
+            player.updateGraphics(game.timeFactor);
+        }
+    }
+
+    // If spectating, follow spectated player with camera
+    if (game.spectatingID != null) {
+        let player = playersById[game.spectatingID]
+        if (player == null)
             return;
-        if (game.timeNetwork - n.lastPacket > 3e3)
+        if (game.timeNetwork - player.lastPacket > 3000)
             return;
-        Graphics.setCamera(n.pos.x, n.pos.y)
-    } else if (null != game.myID) {
-        if (null == (n = playersById[game.myID]))
+        Graphics.setCamera(player.pos.x, player.pos.y)
+    }
+
+    // Otherwise, follow playing player with camera and update HUD
+    else if (game.myID != null) {
+        let player = playersById[game.myID];
+        if (player == null)
             return;
-        0 == n.status && UI.updateHUD(n.health, n.energy, n),
-        Graphics.setCamera(n.pos.x, n.pos.y)
+        if (player.status == 0) {
+            UI.updateHUD(player.health, player.energy, player);
+            Graphics.setCamera(player.pos.x, player.pos.y);
+        }
     }
 };
 
+/**
+ * Add new player
+ * 
+ * Called from LOGIN and PLAYER_NEW message handlers
+ */
 Players.add = function(player, fromLogin) {
     playersById[player.id] = new Player(player, fromLogin);
 
@@ -32,37 +58,42 @@ Players.add = function(player, fromLogin) {
     }
 };
 
-Players.get = function(t) {
-    return playersById[t]
+Players.get = function(id) {
+    return playersById[id];
 };
 
 Players.getMe = function() {
-    return playersById[game.myID]
+    return playersById[game.myID];
 };
 
 Players.amIAlive = function() {
-    var e = Players.getMe();
-    return null != e && 0 == e.status
+    let player = Players.getMe();
+    return player && player.status == 0;
 };
 
 Players.getIDs = function() {
-    var t = {};
-    for (var n in playersById)
-        t[n] = true;
-    return t
+    let ids = {};
+    for (let id in playersById) {
+        ids[id] = true;
+    }
+    return ids;
 };
 
 Players.getByName = function(name) {
-    var id;
-    for (id in playersById)
-        if (playersById[id].name === name)
+    for (let id in playersById) {
+        if (playersById[id].name === name) {
             return playersById[id];
-    return null
+        }
+    }
+    return null;
 };
 
+/**
+ * Message handler
+ */
 Players.network = function(type, msg) {
     let player = playersById[msg.id];
-    if (null != player)
+    if (player) {
         switch (type) {
             case Network.SERVERPACKET.PLAYER_UPDATE:
             case Network.SERVERPACKET.PLAYER_FIRE:
@@ -87,83 +118,154 @@ Players.network = function(type, msg) {
                 player.changeFlag(msg);
                 break;
         }
+    }
 };
 
-Players.stealth = function(t) {
-    var n = playersById[t.id];
-    null != n && n.stealth(t)
+/**
+ * EVENT_STEALTH message handler
+ */
+Players.stealth = function(msg) {
+    let player = playersById[msg.id];
+    if (player) { 
+        player.stealth(msg);
+    }
 };
 
-Players.leaveHorizon = function(t) {
-    var n = playersById[t.id];
-    null != n && n.leaveHorizon()
+/**
+ * EVENT_LEAVEHORIZON message handler
+ */
+Players.leaveHorizon = function(msg) {
+    let player = playersById[msg.id];
+    if (player) {
+        player.leaveHorizon();
+    }
 };
 
-Players.updateBadges = function(r) {
-    for (var i, o = Tools.clamp(r.length, 0, 3), s = [], a = 0; a < o; a++)
-        null != (i = playersById[r[a].id]) && (s.push(i.id),
-        i.state.badge != a && (i.state.badge = a,
-        i.changeBadge(n[a])),
-        i.state.hasBadge || (i.state.hasBadge = true,
-        i.render && (i.sprites.badge.visible = true)));
-    for (var l = 0; l < t.length; l++)
-        if (-1 == s.indexOf(t[l])) {
-            if (null == (i = playersById[t[l]]))
-                continue;
-            i.state.hasBadge && (i.state.hasBadge = false,
-            i.sprites.badge.visible = false)
+/**
+ * SCORE_BOARD message handler
+ */
+Players.updateBadges = function(scores) {
+    let topScoreCount = Tools.clamp(scores.length, 0, 3);
+    let newTopPlayerIds = [];
+
+    // Assign badges to top players
+    for (let i = 0; i < topScoreCount; i++) {
+        let player = playersById[scores[i].id];
+        if (player) {
+            newTopPlayerIds.push(player.id);
+            if (player.state.badge != i) {
+                player.state.badge = i;
+                player.changeBadge(badgeTextures[i]);
+            }
+            if (!player.state.hasBadge) {
+                player.state.hasBadge = true;
+                if (player.render) {
+                    player.sprites.badge.visible = true;
+                }
+            }
         }
-    t = s
+    }
+
+    // Remove badges from players who are not up top
+    for (let id of lastTopPlayerIds) {
+        if (newTopPlayerIds.indexOf(id) == -1) {
+            let player = playersById[id];
+            if (!player) {
+                continue;
+            }
+            if (player.state.hasBadge) {
+                player.state.hasBadge = false;
+                player.sprites.badge.visible = false;
+            }
+        }
+    }
+
+    lastTopPlayerIds = newTopPlayerIds;
 };
 
-Players.chat = function(t) {
-    var n = playersById[t.id];
-    null != n && UI.addChatLine(n, t.text, 0)
+/**
+ * CHAT_PUBLIC message handler
+ */
+Players.chat = function(msg) {
+    let player = playersById[msg.id];
+    if (player) {
+        UI.addChatLine(player, msg.text, 0);
+    }
 };
 
-Players.teamChat = function(t) {
-    var n = playersById[t.id];
-    null != n && UI.addChatLine(n, t.text, 3)
+/**
+ * CHAT_TEAM message handler
+ */
+Players.teamChat = function(msg) {
+    let player = playersById[msg.id];
+    if (player) {
+        UI.addChatLine(player, msg.text, 3);
+    }
 };
 
-Players.votemutePass = function(t) {
-    var n = playersById[t.id];
-    null != n && UI.chatVotemutePass(n)
+/**
+ * CHAT_VOTEMUTEPASSED message handler
+ */
+Players.votemutePass = function(msg) {
+    let player = playersById[msg.id];
+    if (player) {
+        UI.chatVotemutePass(player);
+    }
 };
 
-Players.whisper = function(t) {
-    var n;
-    if (t.to == game.myID) {
-        if (null == (r = playersById[t.from]))
+/**
+ * CHAT_WHISPER message handler
+ */
+Players.whisper = function(msg) {
+    let chatType, player;
+    if (msg.to == game.myID) {
+        player = playersById[msg.from];
+        if (!player) {
             return;
-        n = 2
+        }
+        chatType = 2;
     } else {
-        var r;
-        if (null == (r = playersById[t.to]))
+        player = playersById[msg.to];
+        if (!player) {
             return;
-        n = 1
+        }
+        chatType = 1;
     }
-    UI.addChatLine(r, t.text, n)
+    UI.addChatLine(player, msg.text, chatType);
 };
 
-Players.impact = function(t) {
-    for (var n = 0; n < t.players.length; n++) {
-        var r = playersById[t.players[n].id];
-        null != r && r.impact(t.type, new Vector(t.posX,t.posY), t.players[n].health, t.players[n].healthRegen)
+/**
+ * PLAYER_HIT message handler
+ */
+Players.impact = function(msg) {
+    for (let i = 0; i < msg.players.length; i++) {
+        let player = playersById[msg.players[i].id];
+        if (player) {
+            player.impact(msg.type, new Vector(msg.posX, msg.posY), msg.players[i].health, msg.players[i].healthRegen);
+        }
     }
 };
 
-Players.powerup = function(e) {
-    Players.getMe().powerup(e)
+/**
+ * PLAYER_POWERUP message handler 
+ */
+Players.powerup = function(msg) {
+    Players.getMe().powerup(msg);
 };
 
-Players.updateLevel = function(packet) {
-    var player = playersById[packet.id];
+/**
+ * PLAYER_LEVEL message handler
+ */
+Players.updateLevel = function(msg) {
+    var player = playersById[msg.id];
     if (player != null) {
-        player.updateLevel(packet);
+        player.updateLevel(msg);
     }
 };
 
+/**
+ * PLAYER_RETEAM message handler
+ */
 Players.reteam = function(msg) {
     let player = playersById[msg.id];
     if (player != null) {
@@ -173,6 +275,9 @@ Players.reteam = function(msg) {
     UI.updateGameInfo();
 };
 
+/**
+ * PLAYER_KILL message handler
+ */
 Players.kill = function(msg) {
     let player = playersById[msg.id];
     if (!player) {
@@ -207,6 +312,9 @@ Players.kill = function(msg) {
     }
 };
 
+/**
+ * PLAYER_LEAVE message handler
+ */
 Players.destroy = function(id) {
     if (id == game.spectatingID) {
         $("#spectator-tag").html("Spectating");
@@ -224,17 +332,27 @@ Players.destroy = function(id) {
     }
 };
 
-Players.changeType = function(t) {
-    var n = playersById[t.id];
-    null != n && n.changeType(t)
+/**
+ * PLAYER_TYPE message handler
+ */
+Players.changeType = function(msg) {
+    let player = playersById[msg.id];
+    if (player) {
+        player.changeType(msg);
+    }
 };
 
 Players.count = function() {
-    var t, n = 0, r = 0;
-    for (t in playersById)
-        n++,
-        playersById[t].culled && r++;
-    return [n - r, n]
+    let totalPlayers = 0, culledPlayers = 0;
+
+    for (let id in playersById) {
+        totalPlayers++;
+        if (playersById[id].culled) {
+            culledPlayers++;
+        }
+    }
+
+    return [totalPlayers - culledPlayers, totalPlayers];
 };
 
 Players.playerBotCount = function() {
@@ -258,8 +376,6 @@ Players.playerBotCount = function() {
         else {
             counts.players++;
 
-            // Check for player status of spectate/dead, or special zero position from scoreboard rankings
-            // The (-16320, -8128) is after UI.scoreboardUpdate has called Tools.decodeMinimapCoords
             if (!player.isOnMap()) {
                 counts.notPlaying++;
             }
@@ -277,13 +393,14 @@ Players.playerBotCount = function() {
     return counts;
 }
 
+/**
+ * Remove all players
+ * 
+ * Called when connecting to a new game server
+ */
 Players.wipe = function() {
     for (let id in playersById) {
         playersById[id].destroy(true);
         delete playersById[id];
     }
-};
-
-Players.all = function() { // SPATIE
-    return playersById;
 };
